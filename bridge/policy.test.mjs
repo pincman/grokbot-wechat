@@ -4,10 +4,13 @@ import {
   MEDIA_BODIES,
   buildSendArgv,
   buildWebhookBody,
+  canonicalWeixinUserId,
+  claimsChannel,
   classifyInbound,
   decideReply,
   ownerIdFromAccount,
   resolveOwner,
+  selectWeixinSender,
 } from "./policy.mjs";
 
 test("unbound and mismatched owners fail closed", () => {
@@ -134,6 +137,81 @@ test("reply goes only to the bound owner through the official message command", 
   assert.equal(argv.join(" ").includes("OpenClaw/2.4.9"), false);
 });
 
+test("2026.11.2 hook shape uses conversationId when SenderId is absent", () => {
+  const owner = "o9cq809Labc@im.wechat";
+  const event = {
+    messageId: "123",
+    sessionKey: "agent:main:direct:hidden",
+    senderId: undefined,
+    content: "你好",
+    body: "你好",
+    channel: "openclaw-weixin",
+    isGroup: false,
+    timestamp: 1700000000000,
+  };
+  const ctx = {
+    messageId: "123",
+    sessionKey: event.sessionKey,
+    senderId: undefined,
+    channelId: "openclaw-weixin",
+    accountId: "b0f5860fdecb-im-bot",
+    conversationId: owner,
+  };
+  const selected = selectWeixinSender({ event, ctx });
+  assert.equal(selected.senderId, owner);
+  const decision = classifyInbound({
+    channel: event.channel,
+    ownerId: owner,
+    senderId: selected.senderId,
+    senderReason: selected.reason,
+    body: event.body,
+    messageId: event.messageId,
+    seen: new Set(),
+  });
+  assert.equal(decision.action, "forward");
+  assert.equal(decision.text, "你好");
+  assert.equal(claimsChannel(event.channel), true);
+});
+
+test("identity normalization cannot widen the owner", () => {
+  const owner = "o9cq809Labc@im.wechat";
+  const stranger = "ffff9999@im.wechat";
+  assert.equal(selectWeixinSender({
+    event: { senderId: stranger, isGroup: false },
+    ctx: { conversationId: owner, accountId: owner },
+  }).reason, "sender-ambiguous");
+  assert.equal(selectWeixinSender({
+    event: { senderId: owner },
+    ctx: { conversationId: stranger },
+  }).reason, "sender-ambiguous");
+  assert.equal(selectWeixinSender({
+    ctx: { accountId: owner },
+  }).reason, "sender-missing");
+  assert.equal(selectWeixinSender({
+    ctx: { conversationId: `agent:main:${owner}` },
+  }).reason, "sender-invalid");
+  assert.equal(canonicalWeixinUserId(`user:${owner}`), owner);
+  assert.equal(canonicalWeixinUserId(`openclaw-weixin:${owner}`), owner);
+  assert.equal(canonicalWeixinUserId(`user:openclaw-weixin:${owner}`), "");
+  assert.equal(canonicalWeixinUserId(`${owner}.evil`), "");
+  assert.equal(canonicalWeixinUserId(owner.toUpperCase()), "");
+  assert.equal(selectWeixinSender({
+    event: { isGroup: true },
+    ctx: { conversationId: owner },
+  }).reason, "group");
+  const foreign = classifyInbound({
+    channel: "openclaw-weixin",
+    ownerId: owner,
+    senderId: "",
+    senderReason: "sender-ambiguous",
+    body: "你好",
+    messageId: "9",
+    seen: new Set(),
+  });
+  assert.equal(foreign.action, "foreign");
+  assert.equal(foreign.reason, "sender-ambiguous");
+});
+
 test("other channels are not claimed by this bridge", () => {
   const result = classifyInbound({
     channel: "slack",
@@ -144,4 +222,5 @@ test("other channels are not claimed by this bridge", () => {
     seen: new Set(),
   });
   assert.equal(result.action, "skip");
+  assert.equal(claimsChannel("slack"), false);
 });

@@ -100,6 +100,53 @@ test("inbound filters identity, ignores media, forwards once, and retries a fail
   assert.equal(sent.length, 2);
 });
 
+test("published 2.4.10 context reaches the webhook without SenderId", async () => {
+  const owner = "o9cq809Labc@im.wechat";
+  const store = memoryStore();
+  const sent = [];
+  const deps = {
+    postWebhook: async (body) => {
+      sent.push(body);
+      return true;
+    },
+    loadBridgeState: store.load,
+    saveBridgeState: store.save,
+    resolveBoundOwner: () => ({ ok: true, ownerId: owner }),
+  };
+  const event = {
+    messageId: "88",
+    senderId: undefined,
+    body: "你好",
+    content: "你好",
+    channel: "openclaw-weixin",
+    isGroup: false,
+    timestamp: 1700000000000,
+  };
+  const ctx = {
+    channelId: "openclaw-weixin",
+    accountId: "b0f5860fdecb-im-bot",
+    conversationId: owner,
+    senderId: undefined,
+    messageId: "88",
+  };
+  const result = await deliverInbound({ event, ctx }, deps);
+  assert.equal(result.action, "forward");
+  assert.equal(result.delivered, true);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].from_user_id, owner);
+  assert.equal(sent[0].text, "你好");
+  assert.equal(JSON.stringify(store.state).includes("b0f5860fdecb-im-bot"), false);
+  assert.equal(store.state.lastDecision, "forward");
+
+  const stranger = await deliverInbound({
+    event: { ...event, messageId: "89", senderId: undefined },
+    ctx: { ...ctx, messageId: "89", conversationId: "ffff9999@im.wechat" },
+  }, deps);
+  assert.equal(stranger.action, "foreign");
+  assert.equal(sent.length, 1);
+  assert.equal(store.state.lastDecision, "sender-mismatch");
+});
+
 test("scanned owner reader ignores the bot token", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weixin-accounts-"));
   fs.writeFileSync(path.join(dir, "bot.json"), JSON.stringify({

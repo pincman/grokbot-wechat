@@ -1,4 +1,4 @@
-import { classifyInbound, buildWebhookBody } from "./policy.mjs";
+import { classifyInbound, buildWebhookBody, selectWeixinSender } from "./policy.mjs";
 import { loadBridgeState, resolveBoundOwner, saveBridgeState } from "./state.mjs";
 
 export async function postWebhook(body, env = process.env, fetchImpl = globalThis.fetch) {
@@ -42,23 +42,26 @@ export async function deliverInbound(input, deps = {}) {
   const save = deps.saveBridgeState || saveBridgeState;
   const owner = (deps.resolveBoundOwner || resolveBoundOwner)();
   const state = load();
+  const selected = selectWeixinSender(input);
   const decision = classifyInbound({
-    channel: input.channel,
+    channel: input.channel || input.event?.channel || input.ctx?.channelId,
     ownerId: owner.ok ? owner.ownerId : "",
-    senderId: input.senderId,
-    body: input.body,
-    messageId: input.messageId,
+    senderId: selected.senderId,
+    senderReason: selected.reason,
+    body: input.body ?? input.event?.body ?? input.event?.content ?? "",
+    messageId: input.messageId || input.event?.messageId || input.ctx?.messageId,
     seen: new Set(state.seen),
   });
   if (decision.action === "skip") return decision;
   await flushPending(state, post);
   if (decision.action !== "forward") {
+    state.lastDecision = decision.reason || decision.action;
     save(state);
     return decision;
   }
   const payload = buildWebhookBody({
     text: decision.text,
-    senderId: input.senderId,
+    senderId: selected.senderId,
     messageId: decision.messageId,
     triggerMs: Number(input.timestamp) || Date.now(),
   });
@@ -75,6 +78,7 @@ export async function deliverInbound(input, deps = {}) {
   } else if (!state.pending.some((item) => item.message_id && item.message_id === decision.messageId)) {
     state.pending.push(payload);
   }
+  state.lastDecision = ok ? "forward" : "queued";
   save(state);
   return { ...decision, delivered: ok };
 }

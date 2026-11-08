@@ -73,3 +73,7 @@ node --test bridge/policy.test.mjs bridge/deliver.test.mjs
 ```
 
 图片、视频、文件，以及没有转写的语音，官方插件会把正文变成 `[图片]`、`[视频]`、`[文件]`、`[语音]`。桥丢掉这些正文，不把文件路径发给 Grok。官方插件在进入钩子之前仍可能下载媒体，这一步不在本适配器里。
+
+OpenClaw 2026.11.2 的 `before_dispatch` 使用 `ctx.SenderId`。插件 2.4.10 不设置这个字段，只把发送者放进 `From` / `To` / `OriginatingTo`，钩子上下文里对应 `conversationId`。桥在没有显式 `senderId` 时使用这个私聊对端，且必须与扫码 `userId` 完全一致。显式发送者和对端不一致、群消息、或账户 id，都拒绝转发，并且仍然 `handled`，不进入模型。诊断日志只有原因码，不写 id、正文或 token。
+
+已经进过钩子的旧消息不会重放。更新插件并重启 Gateway 之后，需要再发一条新消息。

@@ -1,5 +1,6 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { deliverInbound } from "../deliver.mjs";
+import { claimsChannel } from "../policy.mjs";
 
 export default definePluginEntry({
   id: "grok-wechat-bridge",
@@ -8,20 +9,16 @@ export default definePluginEntry({
   register(api) {
     api.on("before_dispatch", async (event, ctx) => {
       try {
-        await deliverInbound({
-          channel: event?.channel || ctx?.channelId,
-          senderId: event?.senderId || ctx?.senderId,
-          body: event?.body || event?.content || "",
-          messageId: event?.messageId || ctx?.messageId,
-          timestamp: event?.timestamp,
-        });
+        const decision = await deliverInbound({ event, ctx });
+        if (claimsChannel(event?.channel || ctx?.channelId)) {
+          const label = decision?.reason || decision?.action || "claimed";
+          const delivered = decision?.delivered === true ? " delivered=yes" : decision?.delivered === false ? " delivered=no" : "";
+          api.logger?.info?.(`grok-wechat-bridge ${label}${delivered}`);
+        }
       } catch (error) {
         api.logger?.warn?.(`grok-wechat-bridge failed closed: ${error?.name || "Error"}`);
       }
-      const channel = event?.channel || ctx?.channelId;
-      if (channel === "openclaw-weixin" || channel === "weixin" || channel === "wechat") {
-        return { handled: true };
-      }
+      if (claimsChannel(event?.channel || ctx?.channelId)) return { handled: true };
     });
   },
 });

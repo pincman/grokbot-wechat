@@ -57,9 +57,10 @@ export function loadBridgeState() {
       seen: Array.isArray(data.seen) ? data.seen : [],
       pending: Array.isArray(data.pending) ? data.pending : [],
       lastInboundMs: Number(data.lastInboundMs) || 0,
+      lastDecision: typeof data.lastDecision === "string" ? data.lastDecision : "",
     };
   } catch {
-    return { seen: [], pending: [], lastInboundMs: 0 };
+    return { seen: [], pending: [], lastInboundMs: 0, lastDecision: "" };
   }
 }
 
@@ -72,6 +73,7 @@ export function saveBridgeState(state) {
     seen: state.seen.slice(-500),
     pending: state.pending,
     lastInboundMs: state.lastInboundMs || 0,
+    lastDecision: state.lastDecision || "",
   }));
   fs.chmodSync(tmp, 0o600);
   fs.renameSync(tmp, file);

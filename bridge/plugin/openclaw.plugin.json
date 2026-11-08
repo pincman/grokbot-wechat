@@ -1,0 +1,10 @@
+{
+  "id": "grok-wechat-bridge",
+  "name": "Grok WeChat bridge",
+  "description": "Forward bound-owner WeChat text to an existing Grok Bot webhook. Does not answer WeChat itself.",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}

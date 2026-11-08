@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""WeChat ClawBot binding via iLink (method from chihao.li/blog/en/wechat-clawbot-ilink-protocol).
+"""UNSUPPORTED. This file impersonates an OpenClaw client and calls iLink directly.
+Use bridge/ with the official @tencent-weixin/openclaw-weixin plugin. See README.md.
+WeChat ClawBot binding via iLink (method from chihao.li/blog/en/wechat-clawbot-ilink-protocol).
 Fetches QR -> renders qr.png (+ qr_url.txt) -> long-polls status -> saves credentials.json on confirm.
 Scan qr.png with the WeChat account that has the ClawBot plugin enabled (iOS WeChat 8.0.70+ at the time).
 Auto-refreshes QR (overwrites qr.png) on expiry. If phone shows a number (need_verifycode),

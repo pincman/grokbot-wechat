@@ -15,6 +15,8 @@ export const MAX_STDIN = 16 * 1024;
 export const MAX_TEXT = 4000;
 export const TIMEOUT_MS = 25_000;
 export const REPLY_ENV_PATH = "/var/lib/grok-wechat/reply.env";
+export const DEFAULT_REPLY_COMMAND = "/usr/bin/node /var/lib/grok-wechat/app/bridge/reply-remote.mjs";
+const SAFE_PATH = /^\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/;
 const ALLOWED_KEYS = new Set(["v", "op", "text", "trigger_ms", "from_user_id"]);
 const CHILD_ENV_KEYS = [
   "PATH", "HOME", "USER", "LANG", "LC_ALL",
@@ -49,6 +51,31 @@ export function buildChildEnv(fileEnv) {
   return env;
 }
 
+function safeAbsolutePath(value) {
+  return typeof value === "string" && SAFE_PATH.test(value) && !value.split("/").includes("..");
+}
+
+/** Admin wrapper process env only. JSON and SSH_ORIGINAL_COMMAND are not consulted. */
+export function resolveReplyEnvPath(processEnv = {}) {
+  const direct = processEnv.GROK_WECHAT_REPLY_ENV;
+  const root = processEnv.GROK_WECHAT_ROOT;
+  if (direct !== undefined && direct !== "") {
+    if (!safeAbsolutePath(direct)) return { error: "bad-env-path" };
+    return { path: direct };
+  }
+  if (root !== undefined && root !== "") {
+    if (!safeAbsolutePath(root)) return { error: "bad-env-path" };
+    return { path: `${root}/reply.env` };
+  }
+  return { path: REPLY_ENV_PATH };
+}
+
+export function isSafeForcedCommand(command) {
+  if (typeof command !== "string" || command.length === 0 || command.length > 256) return false;
+  if (/[\r\n$`;&|<>\\"']/.test(command)) return false;
+  return command.split(" ").every((part) => safeAbsolutePath(part));
+}
+
 export function parseReplyRequest(raw) {
   const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw ?? ""), "utf8");
   if (bytes.length > MAX_STDIN) return { error: "too-large" };
@@ -74,11 +101,11 @@ export function parseReplyRequest(raw) {
   return { ok: true, text: data.text, triggerMs: data.trigger_ms, fromUserId };
 }
 
-export function formatAuthorizedKey(publicKeyLine) {
+export function formatAuthorizedKey(publicKeyLine, command = DEFAULT_REPLY_COMMAND) {
   const key = String(publicKeyLine ?? "").trim();
   if (/[\r\n,]/.test(key) || key.includes("command=") || key.includes("restrict")) return { error: "bad-key" };
   if (!/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}(?: [A-Za-z0-9@._:-]+)?$/.test(key)) return { error: "bad-key" };
-  const command = "/usr/bin/node /var/lib/grok-wechat/app/bridge/reply-remote.mjs";
+  if (!isSafeForcedCommand(command)) return { error: "bad-command" };
   return {
     line: `restrict,command="${command}",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ${key}`,
   };
@@ -103,7 +130,10 @@ export function handleReplyRequest(raw, opts = {}) {
   });
   if (!decision.ok) return { code: decision.code, reason: decision.reason, spawned: false };
   if (opts.check) return { code: 0, reason: "would-send", spawned: false };
-  const env = buildChildEnv(opts.fileEnv || {});
+  const env = {
+    ...buildChildEnv(opts.processEnv || {}),
+    ...buildChildEnv(opts.fileEnv || {}),
+  };
   const spawnImpl = opts.spawnImpl || defaultSpawn;
   const child = spawnImpl(process.execPath, [
     path.join(path.dirname(fileURLToPath(import.meta.url)), "reply.mjs"),
@@ -154,9 +184,15 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ code: 1, reason: input.error })}\n`);
     return 1;
   }
-  const loaded = loadFixedEnv();
+  const located = resolveReplyEnvPath(process.env);
+  if (located.error) {
+    process.stdout.write(`${JSON.stringify({ code: 1, reason: located.error })}\n`);
+    return 1;
+  }
+  const loaded = loadFixedEnv(located.path);
   const result = handleReplyRequest(input.bytes, {
     check,
+    processEnv: process.env,
     fileEnv: loaded.env || {},
   });
   process.stdout.write(`${JSON.stringify({ code: result.code, reason: result.reason })}\n`);

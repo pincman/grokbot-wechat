@@ -6,6 +6,7 @@ import {
   handleReplyRequest,
   parseEnvFile,
   parseReplyRequest,
+  resolveReplyEnvPath,
 } from "./reply-remote.mjs";
 import { buildSshArgv, main as sshMain, planSshReply } from "./reply-ssh.mjs";
 
@@ -103,8 +104,53 @@ test("env files do not become shell and authorized_keys stays forced-command onl
   assert.equal(buildChildEnv({ PATH: "/usr/bin", SSH_ORIGINAL_COMMAND: "id", OPENCLAW_GATEWAY_TOKEN: TOKEN }).SSH_ORIGINAL_COMMAND, undefined);
   const line = formatAuthorizedKey("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGZvbyBiYXIgYmF6IGJhdA== grok-wechat-reply");
   assert.equal(line.line.startsWith("restrict,command=\"/usr/bin/node /var/lib/grok-wechat/app/bridge/reply-remote.mjs\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty "), true);
+  assert.equal(formatAuthorizedKey("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGZvbyBiYXIgYmF6IGJhdA== grok-wechat-reply", "/opt/grokwx/bin/grok-wechat-reply").line.includes("command=\"/opt/grokwx/bin/grok-wechat-reply\""), true);
+  assert.equal(formatAuthorizedKey("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGZvbyBiYXIgYmF6IGJhdA== grok-wechat-reply", "/tmp/evil;id").error, "bad-command");
   assert.equal(formatAuthorizedKey("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGZvbyBiYXIgYmF6IGJhdA==\ncommand=\"sh\"").error, "bad-key");
   assert.equal(formatAuthorizedKey("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC grok").error, "bad-key");
+});
+
+test("wrapper install root is trusted and request fields cannot retarget it", () => {
+  assert.equal(resolveReplyEnvPath({}).path, "/var/lib/grok-wechat/reply.env");
+  assert.equal(resolveReplyEnvPath({ GROK_WECHAT_ROOT: "/opt/grokwx" }).path, "/opt/grokwx/reply.env");
+  assert.equal(resolveReplyEnvPath({ GROK_WECHAT_REPLY_ENV: "/opt/grokwx/reply.env" }).path, "/opt/grokwx/reply.env");
+  assert.equal(resolveReplyEnvPath({
+    SSH_ORIGINAL_COMMAND: "GROK_WECHAT_ROOT=/tmp/evil",
+  }).path, "/var/lib/grok-wechat/reply.env");
+  assert.equal(resolveReplyEnvPath({ GROK_WECHAT_ROOT: "/opt/grokwx/../../tmp" }).error, "bad-env-path");
+  assert.equal(parseReplyRequest(JSON.stringify({
+    v: 1, op: "reply", text: "ok", trigger_ms: 1, from_user_id: OWNER,
+    GROK_WECHAT_REPLY_ENV: "/tmp/evil/reply.env",
+  })).error, "unknown-field");
+
+  let seen;
+  const result = handleReplyRequest(request(), {
+    owner,
+    state: fresh,
+    processEnv: {
+      OPENCLAW_STATE_DIR: "/tmp/evil/state",
+      BRIDGE_DATA_DIR: "/tmp/evil/bridge-data",
+      OPENCLAW_GATEWAY_TOKEN: "injected-token",
+      SSH_ORIGINAL_COMMAND: "GROK_WECHAT_REPLY_ENV=/tmp/evil/reply.env",
+    },
+    fileEnv: {
+      PATH: "/opt/grokwx/runtime/node/bin:/usr/bin:/bin",
+      OPENCLAW_STATE_DIR: "/opt/grokwx/state",
+      BRIDGE_DATA_DIR: "/opt/grokwx/bridge-data",
+      OPENCLAW_GATEWAY_TOKEN: TOKEN,
+    },
+    spawnImpl: (_bin, _args, options) => {
+      seen = options.env;
+      return { status: 0 };
+    },
+  });
+  assert.equal(result.code, 0);
+  assert.equal(seen.OPENCLAW_STATE_DIR, "/opt/grokwx/state");
+  assert.equal(seen.BRIDGE_DATA_DIR, "/opt/grokwx/bridge-data");
+  assert.equal(seen.PATH.startsWith("/opt/grokwx/runtime/node/bin"), true);
+  assert.equal(seen.OPENCLAW_GATEWAY_TOKEN, TOKEN);
+  assert.equal(seen.SSH_ORIGINAL_COMMAND, undefined);
+  assert.equal(JSON.stringify(result).includes(TOKEN), false);
 });
 
 test("the box ssh plan carries restrictions and not the reply text", () => {

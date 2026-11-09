@@ -87,6 +87,8 @@ sudo systemctl enable grok-wechat-gateway.service
 
 `reply.env` 与 `gateway.env` 只在服务器上填写。`OPENCLAW_GATEWAY_TOKEN` 留在这两个文件里，不传到 box，也不要贴进聊天。登录 shell 用 bash，是因为 OpenSSH 执行 forced command 时需要一个可执行的 shell。这个账号没有密码。确认没有另一个微信轮询之后再 `systemctl start`。不要同时跑仓库里的 `forward.py`。
 
+`/opt/grokwx` 这种隔离安装不用改 sshd。root 拥有的包装脚本在启动 node 之前自己设置 `GROK_WECHAT_ROOT=/opt/grokwx` 或 `GROK_WECHAT_REPLY_ENV=/opt/grokwx/reply.env`。回复程序只从该进程环境读取这个路径，再读取对应的 `reply.env`。stdin JSON 和 `SSH_ORIGINAL_COMMAND` 不能改路径。未设置时仍使用 `/var/lib/grok-wechat/reply.env`。`reply.env` 里填写本机的 `OPENCLAW_STATE_DIR`、`BRIDGE_DATA_DIR`、`PATH` 和 `OPENCLAW_GATEWAY_TOKEN`；包装脚本已经导出的同名变量也会传给发送子进程，文件里的值优先。
+
 ## 单用途回复密钥
 
 在 box 上新生成 ed25519 密钥，不要复制 Mac 登录私钥：

@@ -114,7 +114,7 @@ export function buildWebhookBody({ text, senderId, messageId, triggerMs }) {
     message_id: messageId || undefined,
     trigger_ms: triggerMs ?? undefined,
     reply_rule:
-      "Reply with reply.mjs and the same trigger_ms. Exit 4 means a newer WeChat message arrived; send nothing. The target is only the bound owner.",
+      "On the box run node bridge/reply-ssh.mjs \"reply\" --reply-to-ms <trigger_ms> --from-user-id <from_user_id>. Prod checks that id against the scanned owner and exits 4 when trigger_ms is stale. Send nothing on exit 4. Do not read a box state file.",
   };
 }
 

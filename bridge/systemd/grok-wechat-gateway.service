@@ -1,0 +1,28 @@
+[Unit]
+Description=Isolated OpenClaw gateway for the WeChat bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=grok-wechat
+Group=grok-wechat
+WorkingDirectory=/var/lib/grok-wechat/app
+Environment=HOME=/var/lib/grok-wechat
+Environment=OPENCLAW_STATE_DIR=/var/lib/grok-wechat/.openclaw
+Environment=BRIDGE_DATA_DIR=/var/lib/grok-wechat/bridge-data
+EnvironmentFile=/var/lib/grok-wechat/gateway.env
+ExecStart=/usr/bin/openclaw gateway run
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/grok-wechat
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

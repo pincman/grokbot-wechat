@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Forward WeChat ClawBot user messages (message_type==1) to a Grok Bot webhook routine.
+"""UNSUPPORTED. This forwarder is a third-party iLink client. Do not run it.
+Use bridge/ with the official OpenClaw WeChat plugin. See README.md.
+Forward WeChat ClawBot user messages (message_type==1) to a Grok Bot webhook routine.
 Loops forever on ilink/bot/getupdates (same cursor/state handling as poll.py). Logs to forward.log.
 Three threads:
   main     long-poll getupdates -> dedupe -> download media -> append to pending.json

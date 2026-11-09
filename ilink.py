@@ -1,4 +1,5 @@
-"""Minimal WeChat ClawBot iLink client.
+"""UNSUPPORTED third-party iLink client. Do not use. See README.md.
+Minimal WeChat ClawBot iLink client.
 Protocol notes: https://chihao.li/blog/en/wechat-clawbot-ilink-protocol and the
 @tencent-weixin/openclaw-weixin 2.4.9 npm package (headers / base_info mimic that client)."""
 import base64, json, os, random, secrets, urllib.request
